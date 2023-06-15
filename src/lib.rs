@@ -1,5 +1,5 @@
 #![no_std]
-use gstd::{debug, exec, msg, prelude::*, ActorId, MessageId};
+use gstd::{debug, exec, msg, prelude::*, ActorId, MessageId, ReservationId};
 
 // prices for acceleration and shuffles are constants for simple implementation
 pub const ACCELERATION_COST: u32 = 10;
@@ -9,6 +9,12 @@ pub const MAX_ACC_AMOUNT: u32 = 25;
 pub const MAX_SHELL_AMOUNT: u32 = 10;
 pub const MAX_DISTANCE: u32 = 10_000;
 pub const TIME: u32 = 1;
+
+pub const GAS_FOR_STRATEGY: u64 = 20_000_000_000;
+pub const RESERVATION_AMOUNT: u64 = 240_000_000_000;
+pub const RESERVATION_TIME: u32 = 86_400;
+pub const GAS_MIN_AMOUNT: u64 = 30_000_000_000;
+
 static mut GAME: Option<Game> = None;
 
 #[derive(Encode, Decode, TypeInfo, Clone, Debug)]
@@ -44,7 +50,7 @@ pub struct Game {
     pub state: GameState,
     pub winner: ActorId,
     pub current_round: u32,
-    pub moves: Vec<BTreeMap<ActorId, Car>>,
+    pub reservations: Vec<ReservationId>,
 }
 
 #[derive(Encode, Decode, TypeInfo)]
@@ -53,6 +59,7 @@ pub enum GameAction {
     StartGame,
     ContinueGame,
     Play,
+    MakeReservation,
 }
 
 #[derive(Encode, Decode, TypeInfo, Debug)]
@@ -71,6 +78,7 @@ pub enum GameReply {
     Registered,
     NotEnoughGas,
     GameFinished,
+    GasReserved,
 }
 
 impl Game {
@@ -105,17 +113,18 @@ impl Game {
     }
 
     fn play(&mut self) {
-        debug!("");
-        debug!("PLAY");
-        debug!("Current turn {:?}", self.current_turn);
         if self.state == GameState::Finished {
             msg::reply(GameReply::GameFinished, 0).expect("Error in sending a reply");
             return;
         }
         let car_id = self.get_current_car_id();
-        self.awaiting_reply_to_msg_id =
-            msg::send(car_id, CarAction::YourTurn(self.cars.clone()), 0)
-                .expect("Error in sending a message");
+        self.awaiting_reply_to_msg_id = msg::send_with_gas(
+            car_id,
+            CarAction::YourTurn(self.cars.clone()),
+            GAS_FOR_STRATEGY,
+            0,
+        )
+        .expect("Error in sending a message");
     }
 
     fn buy_acceleration(&mut self, amount: u32) {
@@ -207,6 +216,14 @@ impl Game {
             }
         }
     }
+
+    fn reserve_gas(&mut self) {
+        let reservation_id = ReservationId::reserve(RESERVATION_AMOUNT, RESERVATION_TIME)
+            .expect("reservation across executions");
+        self.reservations.push(reservation_id);
+
+        msg::reply(GameReply::GasReserved, 0).expect("Error in reply");
+    }
 }
 #[no_mangle]
 extern "C" fn handle() {
@@ -217,13 +234,12 @@ extern "C" fn handle() {
         GameAction::StartGame => game.start_game(),
         GameAction::ContinueGame => game.continue_game(),
         GameAction::Play => game.play(),
+        GameAction::MakeReservation => game.reserve_gas(),
     }
 }
 
 #[no_mangle]
 extern "C" fn handle_reply() {
-    debug!("");
-    debug!("HANDLE REPLY");
     let reply_to = msg::reply_to().expect("Unable to get the msg id");
     let game = unsafe { GAME.as_mut().expect("The game is not initialized") };
     if reply_to != game.awaiting_reply_to_msg_id {
@@ -259,10 +275,6 @@ extern "C" fn handle_reply() {
     if game.current_turn == 0 {
         game.check_for_penalties();
         game.update_positions();
-        debug!("");
-        debug!("ROUND {:?}", game.current_round);
-        debug!("CARS {:?}", game.cars);
-        //    self.
         msg::send(
             game.admin,
             GameInfo {
@@ -274,7 +286,18 @@ extern "C" fn handle_reply() {
         .expect("Error in sending a message");
         game.current_round = game.current_round.saturating_add(1);
     }
-    msg::send(exec::program_id(), GameAction::Play, 0).expect("Error in sending a msg");
+
+    // check the gas
+    if exec::gas_available() <= GAS_MIN_AMOUNT {
+        if let Some(id) = game.reservations.pop() {
+            msg::send_from_reservation(id, exec::program_id(), GameAction::Play, 0)
+                .expect("Failed to send message");
+        } else {
+            game.state = GameState::Stopped;
+        };
+    } else {
+        msg::send(exec::program_id(), GameAction::Play, 0).expect("Error in sending a msg");
+    }
 }
 
 #[no_mangle]

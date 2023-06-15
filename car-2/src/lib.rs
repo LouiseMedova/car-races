@@ -1,5 +1,5 @@
 #![no_std]
-use gstd::{exec, debug,msg, prelude::*, ActorId};
+use gstd::{debug, exec, msg, prelude::*, ActorId};
 
 #[derive(Encode, Decode, TypeInfo)]
 pub enum CarAction {

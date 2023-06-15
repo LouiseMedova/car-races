@@ -1,5 +1,5 @@
 #![no_std]
-use gstd::{exec, debug,msg, prelude::*, ActorId};
+use gstd::{debug, exec, msg, prelude::*, ActorId};
 
 #[derive(Encode, Decode, TypeInfo)]
 pub enum CarAction {
@@ -23,7 +23,7 @@ pub enum StrategyAction {
 #[no_mangle]
 extern "C" fn handle() {
     let msg: CarAction = msg::load().expect("Unable to load the message");
-    
+
     let cars = if let CarAction::YourTurn(cars) = msg {
         cars
     } else {
@@ -40,9 +40,8 @@ extern "C" fn handle() {
     cars_vec.sort_by(|a, b| b.1.position.cmp(&a.1.position));
 
     // If I'm the first skip
-    if cars_vec[0].0 == my_car_id {     
-        msg::reply(StrategyAction::Skip, 0)
-            .expect("Error in sending a message");
+    if cars_vec[0].0 == my_car_id {
+        msg::reply(StrategyAction::Skip, 0).expect("Error in sending a message");
         return;
     }
 
@@ -52,7 +51,7 @@ extern "C" fn handle() {
         // if the distance is small, then just buy acceleration
         if (cars_vec[0].1.position - my_position) <= 1000 {
             debug!("ACC");
-            msg::reply(StrategyAction::BuyShell { amount: 10  }, 0)
+            msg::reply(StrategyAction::BuyShell { amount: 10 }, 0)
                 .expect("Error in sending a message");
         } else {
             // else buy shells
