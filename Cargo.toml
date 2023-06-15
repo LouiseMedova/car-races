@@ -1,0 +1,19 @@
+[package]
+name = "car-races"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gstd = { git = "https://github.com/gear-tech/gear.git", rev = "78dfa07", features = ["debug"] }
+scale-info = { version = "2", default-features = false }
+parity-scale-codec = { version = "3", default-features = false }
+
+[build-dependencies]
+gear-wasm-builder = { git = "https://github.com/gear-tech/gear.git", rev = "78dfa07" }
+
+[dev-dependencies]
+wrecked = "^1.0.0"
+gtest = { git = "https://github.com/gear-tech/gear.git", rev = "78dfa07" }
+car-1 = { path = "car-1" }
+car-2 = { path = "car-2" }
+car-3 = { path = "car-3" }
